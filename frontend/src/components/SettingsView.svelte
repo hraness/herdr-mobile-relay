@@ -653,6 +653,12 @@
 >
   <h2 id="settings-title">Settings</h2>
 
+  {#await import('$components/InvitationImport.svelte') then { default: InvitationImport }}
+    <Card>
+      <InvitationImport />
+    </Card>
+  {/await}
+
   <Card>
     <h3>Relays</h3>
     <form class="form-stack" onsubmit={addRelay}>
