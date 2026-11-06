@@ -5,6 +5,11 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Add a computer from a pasted invitation in Settings inside the installed app,
+  keeping existing computers and device pairings intact.
+
 ## [0.25.0] - 2026-11-05
 
 ### Added
