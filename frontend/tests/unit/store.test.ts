@@ -8,7 +8,7 @@ import { TerminalInputDelivery } from '$lib/terminal-input-delivery.svelte';
 import unavailablePage from '../../../contracts/fixtures/conversation_unavailable.json';
 import piCatalogFixture from '../../../contracts/fixtures/pi_command_catalog.json';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeRelayId } from '$lib/config';
+import { makeRelayId, normalizeRelayConfig, saveRelayConfigs } from '$lib/config';
 import { decodeTargetRoute, encodeTargetRoute, targetRefForAgent, targetStoreKey } from '$lib/resource-id';
 import { BrowserDeviceCredentialStore } from '$lib/device-auth';
 import {
@@ -68,6 +68,14 @@ class MockWebSocket {
     this.onclose?.(code === undefined ? undefined : { code });
   }
 }
+
+function saveComputerConfig(relay: Omit<RelayConfig, 'id'>): string {
+  const config = normalizeRelayConfig(relay);
+  relayStore.relayConfigs.set([config]);
+  saveRelayConfigs([config]);
+  return config.id;
+}
+
 function exactAgentFields(paneId = 'w1:p1') {
   return {
     server_session_id: 'primary',
@@ -614,7 +622,7 @@ describe('relay command store', () => {
       url: 'wss://invited.example/ws',
       token: '',
     };
-    const relayId = makeRelayId(relay.label, relay.url);
+    const relayId = saveComputerConfig(relay);
     new BrowserDeviceCredentialStore(localStorage).saveInvitation(relayId, {
       id: 'invitation-credential',
       version: 1,
@@ -971,7 +979,7 @@ describe('relay command store', () => {
     relayStore.relayConfigs.set([]);
     MockWebSocket.instances = [];
     const relayUrl = 'wss://renewed.example';
-    const relayId = makeRelayId('Renewed', relayUrl);
+    const relayId = saveComputerConfig({ label: 'Renewed', url: relayUrl, token: '' });
     const store = new BrowserDeviceCredentialStore(localStorage);
     const issuedAt = Date.now();
     const storeCredential = () => localStorage.setItem('herdr_device_auth_v1', JSON.stringify({
@@ -2705,7 +2713,7 @@ describe('relay command store', () => {
     relayStore.relayConfigs.set([]);
     MockWebSocket.instances = [];
     const relay = { label: 'Paired TLS', url, token: '' };
-    const relayId = makeRelayId(relay.label, relay.url);
+    const relayId = saveComputerConfig(relay);
     const credentials = new BrowserDeviceCredentialStore(localStorage);
     credentials.saveInvitation(relayId, { id: 'synthetic-invite', version: 1, secret: 'A'.repeat(43), expiresAt: Date.now() + 60_000 });
     credentials.replaceInvitation(relayId, 'synthetic-invite', {

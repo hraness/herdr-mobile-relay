@@ -24,6 +24,7 @@ import {
   normalizeRelayConfig,
   quickSetupConfig,
   quickSetupInvitation,
+  relayForSetup,
   RELAY_KEY_BYTES,
   saveRelayConfigs,
   shouldDeferPairingConnection,
@@ -617,21 +618,20 @@ class RelayStore {
     this.deferredPairingRelays.clear();
     const setup = quickSetupConfig(location);
     const invitation = quickSetupInvitation(location);
-    const imported = importQuickSetup(relays, location);
-    if (imported) {
+    const imported = importQuickSetup(relays, location, (id) => this.deviceCredentials.has(id));
+    const importedRelay = imported && setup ? relayForSetup(imported, setup) : undefined;
+    if (imported && importedRelay) {
       clearChangedRelayPreviews(relays, imported);
       relays = imported;
-      const relay = setup ? this.relayForSetup(relays, setup) : undefined;
-      const pairingAccepted = relay && this.setupPairingAccepted(relay, location);
-      if (relay) {
-        if (this.deferPairing(relay, location)) {
-          this.showToast(PAIRING_DEFERRED_MESSAGE);
-        } else if (invitation && this.shouldSaveInvitation(relay.id, invitation)) {
-          try {
-            this.deviceCredentials.saveInvitation(relay.id, invitation);
-          } catch {
-            // A malformed or expired link must not remove a working credential.
-          }
+      const relay = importedRelay;
+      const pairingAccepted = this.setupPairingAccepted(relay, location);
+      if (this.deferPairing(relay, location)) {
+        this.showToast(PAIRING_DEFERRED_MESSAGE);
+      } else if (invitation && this.shouldSaveInvitation(relay.id, invitation)) {
+        try {
+          this.deviceCredentials.saveInvitation(relay.id, invitation);
+        } catch {
+          // A malformed or expired link must not remove a working credential.
         }
       }
       saveRelayConfigs(relays);
@@ -678,15 +678,6 @@ class RelayStore {
     this.connectionsValue.set(relay.id, connection);
     this.emitConnections();
   }
-  private relayForSetup(relays: RelayConfig[], setup: Omit<RelayConfig, 'id'>): RelayConfig | undefined {
-    if (setup.transport === 'hybrid') {
-      const gateways = setup.gatewayUrls ?? [setup.gatewayUrl ?? ''];
-      return relays.find((relay) => relay.transport === 'hybrid'
-        && relay.label === setup.label
-        && (relay.gatewayUrls ?? [relay.gatewayUrl ?? '']).some((gateway) => gateways.includes(gateway)));
-    }
-    return relays.find((relay) => relay.url === setup.url);
-  }
   private shouldSaveInvitation(relayId: string, invitation: Omit<RelayInvitation, 'kind'>): boolean {
     const stored = this.deviceCredentials.get(relayId);
     if (!stored) return true;
@@ -711,7 +702,7 @@ class RelayStore {
 
   pairDeferredRelay(relayId: string): boolean {
     const setup = quickSetupConfig(location);
-    const relay = setup ? this.relayForSetup(get(this.relayConfigs), setup) : undefined;
+    const relay = setup ? relayForSetup(get(this.relayConfigs), setup) : undefined;
     if (!this.deferredPairingRelays.has(relayId) || relay?.id !== relayId) {
       this.showToast('Open the invitation link again.', true);
       return false;
@@ -741,11 +732,11 @@ class RelayStore {
     const setup = quickSetupConfig(locationValue);
     const invitation = quickSetupInvitation(locationValue);
     const currentRelays = get(this.relayConfigs);
-    const imported = importQuickSetup(currentRelays, locationValue);
+    const imported = importQuickSetup(currentRelays, locationValue, (id) => this.deviceCredentials.has(id));
     if (!imported || !setup) return false;
-    clearChangedRelayPreviews(currentRelays, imported);
-    const relay = this.relayForSetup(imported, setup);
+    const relay = relayForSetup(imported, setup);
     if (!relay) return false;
+    clearChangedRelayPreviews(currentRelays, imported);
     const pairingAccepted = this.setupPairingAccepted(relay, locationValue);
     const connection = this.connectionsValue.get(relay.id);
     const preserveConnection = pairingAccepted && connection && !connection.closed
@@ -802,9 +793,9 @@ class RelayStore {
     // A hybrid relay is addressed by its gateway, not by a relay URL.
     if (!next.url && !next.gatewayUrl) return;
     const relays = get(this.relayConfigs);
-    const existing = relays.find((relay) => (next.url
-      ? relay.url === next.url
-      : relay.gatewayUrl === next.gatewayUrl && relay.token === next.token));
+    const existing = relayForSetup(relays, next);
+    if (existing === null || (!existing && (relays.some((relay) => relay.id === next.id)
+      || this.deviceCredentials.has(next.id)))) return;
     // Re-adding or editing an entry must not forget that this relay was paired:
     // the flag is what keeps a credential-less invitation relay off the
     // plaintext path.
