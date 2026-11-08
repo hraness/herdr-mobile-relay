@@ -1,0 +1,105 @@
+name: Isolated Herdr clock and witness diagnosis
+
+on:
+  push:
+    branches: [codex/herdr-clock-ci-diag-20261109]
+
+permissions:
+  contents: read
+
+jobs:
+  clock-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BUN_OPTIONS: --no-env-file
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - name: Sample the unchanged shell timestamp phase and direct GNU date pipe
+        run: bun --no-env-file scripts/diagnostics/bun-clock-ci.ts --output diagnostics/bun-clock-ci.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: isolated-bun-clock-${{ github.run_id }}-${{ github.run_attempt }}
+          path: diagnostics/bun-clock-ci.json
+          if-no-files-found: error
+          retention-days: 1
+
+  unchanged-witnesses-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BUN_OPTIONS: --no-env-file
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.3
+          cache: false
+      - name: Install the existing XML test prerequisites
+        run: |
+          set -euo pipefail
+          sudo sed -i '\|^http://azure[.]archive[.]ubuntu[.]com/ubuntu/|d' /etc/apt/apt-mirrors.txt
+          sudo timeout --kill-after=5s 120s apt-get -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Acquire::Retries=1 -o APT::Update::Error-Mode=any update
+          sudo timeout --kill-after=5s 120s apt-get -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Acquire::Retries=1 install -y libxml2-utils
+      - name: Verify exact source, runtimes and Ubuntu image family
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          printf '%s\n' '8b93d1644262f180cf2b211c0e099b1a16e2b09f3bcdb4ee7af4124ccd121789  tests/mobile/unit/xctest-owner.ts' | sha256sum --check --status
+          test "$(node --version)" = v26.13.0
+          test "$(command -v node)" = "$(node -p 'process.execPath')"
+          test "$(bun --version)" = 1.4.4
+          test "$(go version | awk '{print $3}')" = go1.27.3
+          test "$(go env GOTOOLCHAIN)" = local
+          grep -qx 'ID=ubuntu' /etc/os-release
+          grep -qx 'VERSION_ID="26.04"' /etc/os-release
+          tar --version | grep -q '^tar (GNU tar)'
+          xmllint --version >/dev/null 2>&1
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: mobile-unit-cache
+        with:
+          path: |
+            frontend/node_modules
+            tests/mobile/node_modules
+          key: mobile-unit-${{ runner.os }}-node-26.13.0-bun-1.4.4-${{ hashFiles('frontend/bun.lock', 'tests/mobile/bun.lock') }}
+      - name: Install unchanged mobile dependencies
+        if: steps.mobile-unit-cache.outputs.cache-hit != 'true'
+        run: |
+          bun install --frozen-lockfile --cwd frontend
+          bun install --frozen-lockfile --cwd tests/mobile
+      - name: Replay each original case once with existing protocol export
+        env:
+          MOBILE_UNIT_FILTER: '^Native startup actual XCTest supervisor listener-concurrent-exit-before-close$|^Native startup XCTest owned terminal witness$'
+          XCTEST_DIAGNOSTIC_ROOT: ${{ runner.temp }}/isolated-xctest-protocol
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/isolated-xctest-protocol" "$RUNNER_TEMP/isolated-xctest-raw-log"
+          bun --no-env-file run --cwd tests/mobile test:unit >"$RUNNER_TEMP/isolated-xctest-raw-log/unit.stdout" 2>"$RUNNER_TEMP/isolated-xctest-raw-log/unit.stderr"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: isolated-xctest-existing-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/isolated-xctest-protocol/
+            ${{ runner.temp }}/isolated-xctest-raw-log/
+          if-no-files-found: error
+          retention-days: 1
