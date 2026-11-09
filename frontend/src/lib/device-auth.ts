@@ -84,6 +84,12 @@ export class BrowserDeviceCredentialStore {
     private readonly now: () => number = Date.now,
   ) {}
 
+  /** Includes expired invitations without pruning or changing storage. */
+  has(relayId: string): boolean {
+    const id = validIdentifier(relayId, 'relay id');
+    return Object.prototype.hasOwnProperty.call(this.read().relays, id);
+  }
+
   get(relayId: string): RelayInvitation | RelayDeviceCredential | null {
     const id = validIdentifier(relayId, 'relay id');
     const entry = this.read().relays[id];

@@ -246,7 +246,7 @@ jobs:
 
   mobile-unit-prepare:
     name: Prepare source-bound mobile unit shards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       BUN_OPTIONS: --no-env-file
@@ -283,6 +283,8 @@ jobs:
           test "$(go version | awk '{print $3}')" = go1.27.3
           test "$(go env GOTOOLCHAIN)" = local
           tar --version | grep -q '^tar (GNU tar)'
+          date --version | grep -q '^date (GNU coreutils) ' || { echo 'Mobile unit clock witnesses require GNU coreutils date.' >&2; exit 1; }
+          mobile_unit_date_format=$(date --date=@1700000000.007831000 '+%s|%N|%3N|%s%N|%s%3N') && test "$mobile_unit_date_format" = '1700000000|007831000|007|1700000000007831000|1700000000007' || { echo 'GNU date millisecond formatting contract changed.' >&2; exit 1; }
           xmllint --version >/dev/null 2>&1
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: mobile-unit-cache
@@ -317,7 +319,7 @@ jobs:
     name: Mobile unit shard group (${{ matrix.group_id }})
     if: needs.mobile-unit-prepare.result == 'success'
     needs: mobile-unit-prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       BUN_OPTIONS: --no-env-file
@@ -356,6 +358,8 @@ jobs:
           test "$(go version | awk '{print $3}')" = go1.27.3
           test "$(go env GOTOOLCHAIN)" = local
           tar --version | grep -q '^tar (GNU tar)'
+          date --version | grep -q '^date (GNU coreutils) ' || { echo 'Mobile unit clock witnesses require GNU coreutils date.' >&2; exit 1; }
+          mobile_unit_date_format=$(date --date=@1700000000.007831000 '+%s|%N|%3N|%s%N|%s%3N') && test "$mobile_unit_date_format" = '1700000000|007831000|007|1700000000007831000|1700000000007' || { echo 'GNU date millisecond formatting contract changed.' >&2; exit 1; }
           xmllint --version >/dev/null 2>&1
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: mobile-unit-cache
@@ -395,7 +399,7 @@ jobs:
     name: Complete mobile unit shard gate
     if: always()
     needs: [mobile-unit-prepare, mobile-unit-shards]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       BUN_OPTIONS: --no-env-file
@@ -432,6 +436,8 @@ jobs:
           test "$(go version | awk '{print $3}')" = go1.27.3
           test "$(go env GOTOOLCHAIN)" = local
           tar --version | grep -q '^tar (GNU tar)'
+          date --version | grep -q '^date (GNU coreutils) ' || { echo 'Mobile unit clock witnesses require GNU coreutils date.' >&2; exit 1; }
+          mobile_unit_date_format=$(date --date=@1700000000.007831000 '+%s|%N|%3N|%s%N|%s%3N') && test "$mobile_unit_date_format" = '1700000000|007831000|007|1700000000007831000|1700000000007' || { echo 'GNU date millisecond formatting contract changed.' >&2; exit 1; }
           xmllint --version >/dev/null 2>&1
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: mobile-unit-cache
