@@ -10,6 +10,11 @@ project follows [Semantic Versioning](https://semver.org/).
 - Add a computer from a pasted invitation in Settings inside the installed app,
   keeping existing computers and device pairings intact.
 
+### Fixed
+
+- Importing another computer's invitation no longer replaces a saved pairing when
+  computers share a name and gateway. Ambiguous links keep existing pairings intact.
+
 ## [0.25.0] - 2026-11-05
 
 ### Added

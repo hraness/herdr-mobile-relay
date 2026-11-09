@@ -333,45 +333,49 @@ export function shouldDeferPairingConnection(
     || (/\bMacintosh\b/iu.test(userAgent) && maxTouchPoints > 1);
 }
 
+/** Undefined means a new computer; null means its identity is ambiguous. */
+export function relayForSetup(
+  relays: readonly RelayConfig[],
+  setup: Omit<RelayConfig, 'id'>,
+): RelayConfig | null | undefined {
+  let matches: RelayConfig[];
+  if (setup.transport === 'hybrid') {
+    const gateways = setup.gatewayUrls ?? [setup.gatewayUrl ?? ''];
+    const candidates = relays.filter((relay) => relay.transport === 'hybrid'
+      && (relay.gatewayUrls ?? [relay.gatewayUrl ?? '']).some((gateway) => gateways.includes(gateway)));
+    if (setup.gatewayRelayId) {
+      matches = candidates.filter((relay) => relay.gatewayRelayId === setup.gatewayRelayId);
+      // A label cannot prove whether an invited computer is an older keyed row.
+      if (!matches.length && candidates.some((relay) => !relay.gatewayRelayId && relay.label === setup.label)) return null;
+    } else {
+      matches = candidates.filter((relay) => Boolean(setup.token) && relay.token === setup.token);
+    }
+  } else {
+    matches = relays.filter((relay) => relay.url === setup.url);
+    // A quick tunnel changes its hostname while the computer keeps its key.
+    if (!matches.length && setup.token) matches = relays.filter((relay) => relay.token === setup.token);
+  }
+  if (matches.length > 1) return null;
+  const existing = matches[0];
+  if (existing && relays.some((relay) => relay !== existing && relay.id === existing.id)) return null;
+  return existing;
+}
+
 export function importQuickSetup(
   relays: RelayConfig[],
   locationValue: Pick<Location, 'hash' | 'protocol' | 'host'>,
+  occupied?: (id: string) => boolean,
 ): RelayConfig[] | null {
   const setup = quickSetupConfig(locationValue);
   if (!setup) return null;
   const invitation = quickSetupInvitation(locationValue);
-  // A shared gateway hosts many computers. A link that names the computer's
-  // rendezvous id is matched on it; a keyed entry made from a setup link has
-  // no id to compare, so its label decides. Any shared entry counts: a relay
-  // that gained a gateway or reordered its list updates its entry instead of
-  // pairing itself a second time.
-  const sameComputer = (relay: RelayConfig): boolean => {
-    if (setup.gatewayRelayId) {
-      return relay.gatewayRelayId
-        ? relay.gatewayRelayId === setup.gatewayRelayId
-        : Boolean(relay.token) && relay.label === setup.label;
-    }
-    return relay.token === setup.token || relay.label === setup.label;
-  };
-  const existing = setup.transport === 'hybrid'
-    ? relays.find((relay) => relay.transport === 'hybrid'
-      && (relay.gatewayUrls ?? [relay.gatewayUrl ?? '']).some((entry) => setup.gatewayUrls?.includes(entry))
-      && sameComputer(relay))
-    // A quick tunnel mints a new hostname on every relay restart, but the
-    // relay's key persists. The same key is the same relay, so the stored
-    // entry - and the device credential enrolled under its id - follows the
-    // relay to its new address instead of pairing a second time and being
-    // refused: the relay's one-use bootstrap invitation is already consumed.
-    : relays.find((relay) => relay.url === setup.url)
-      ?? relays.find((relay) => Boolean(setup.token) && relay.token === setup.token);
+  const existing = relayForSetup(relays, setup);
+  if (existing === null) return null;
   const next = normalizeRelayConfig({
+    ...(invitation && existing ? existing : setup),
     id: existing?.id,
     label: existing?.label || setup.label,
     url: setup.url,
-    token: invitation && existing ? existing.token : setup.token,
-    transport: invitation && existing ? existing.transport : setup.transport,
-    gatewayUrl: invitation && existing ? existing.gatewayUrl : setup.gatewayUrl,
-    gatewayUrls: invitation && existing ? existing.gatewayUrls : setup.gatewayUrls,
     gatewayRelayId: setup.gatewayRelayId ?? existing?.gatewayRelayId,
     rendezvousKey: setup.rendezvousKey ?? existing?.rendezvousKey,
     // An invitation link is an encrypted pairing, and the entry it creates
@@ -379,6 +383,8 @@ export function importQuickSetup(
     // relay apart from a tokenless one once its credential is gone.
     paired: invitation ? true : existing?.paired,
   });
+  // The readable id is truncated and case-folded; it is not computer identity.
+  if (!existing && (relays.some((relay) => relay.id === next.id) || occupied?.(next.id))) return null;
   return existing ? relays.map((relay) => (relay.id === existing.id ? next : relay)) : [...relays, next];
 }
 
